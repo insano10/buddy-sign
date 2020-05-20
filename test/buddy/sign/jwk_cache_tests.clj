@@ -1,7 +1,7 @@
 (ns buddy.sign.jwk-cache-tests
   (:require [clojure.test :refer :all]
             [buddy.core.keys :as keys]
-            [buddy.sign.jwk :as jwk]))
+            [buddy.sign.jwk-cache :as jwk]))
 
 (def public-keys {:LYyP2g "-----BEGIN PUBLIC KEY-----\n
                            MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAESlXFFkJ3JxMsXyXNrqzE3ozl/091 3PmNbccLLWfeQFUYtJqGtl8ESuYxRwc/QwZp5Wcl0HCq6GuFDx4/Tk18Ig==\n
