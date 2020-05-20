@@ -24,7 +24,7 @@
 
 (defn- refresh-jwk-cache
   [well-known-endpoint]
-  (when-let [jwk-doc (fetch well-known-endpoint)]
+  (when-let [jwk-doc (:keys (fetch well-known-endpoint))]
     (reset! jwk-cache (zipmap (map :kid jwk-doc) jwk-doc))))
 
 (defn- fetch-jwk
