@@ -35,21 +35,22 @@
                  :use "sig",
                  :x   "qCByTAvci-jRAD7uQSEhTdOs8iA714IbcY2L--YzynI",
                  :y   "WQY0uCoQyPSozWKGQ0anmFeOH5JNXiZa9i6SNqOcm7w"})
-(def full-jwk-doc {:keys [LYyP2g-jwk,
-                          mpf0DA-jwk,
-                          b9vTLA-jwk]})
 
 (defn- wke-url [] (str "http://wke-" (UUID/randomUUID)))
 
-(use-fixtures :once (fn [f] (with-redefs [jwk/refresh-delay-ms 0] f)))
+(use-fixtures :once (fn [f] (with-redefs [jwk/refresh-delay-ms 0] (f))))
 
 (deftest fetch-known-key-from-jwk-cache
-  (with-redefs [jwk/fetch (fn [_] full-jwk-doc)]
+  (with-redefs [jwk/fetch (fn [_] {:keys [LYyP2g-jwk]})]
     (is (= (jwk/get-public-key (wke-url) "LYyP2g")
            (keys/str->public-key (:LYyP2g public-keys))))))
 
 (deftest fetch-unknown-key-from-jwk-cache
-  (with-redefs [jwk/fetch (fn [_] full-jwk-doc)]
+  (with-redefs [jwk/fetch (fn [_] {:keys [LYyP2g-jwk]})]
+    (is (nil? (jwk/get-public-key (wke-url) "unknown")))))
+
+(deftest no-keys-from-wke-results-in-nil-key
+  (with-redefs [jwk/fetch (fn [_] "")]
     (is (nil? (jwk/get-public-key (wke-url) "unknown")))))
 
 (deftest fetch-newly-rotated-known-key-from-jwk-cache
