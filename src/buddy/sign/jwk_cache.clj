@@ -6,33 +6,35 @@
 
 (def ^:private jwk-cache (atom {}))
 
-(defn- string->edn
-  "Parse JSON from a string returning an edn map, otherwise nil"
-  [string]
-  (when-let [edn (json/decode string true)]
-    (when (map? edn)
-      edn)))
-
 (defn- fetch
   "Obtain HTTP resource and parse it into a Clojure map"
   [endpoint]
   (-> @(http/get endpoint)
       :body
-      streams/to-string                                     ;todo do i really need byte-streams for this
-      string->edn))
+      streams/to-string
+      (json/parse-string true)))
 
 (defn- refresh-jwk-cache
   [well-known-endpoint]
   (when-let [jwk-doc (:keys (fetch well-known-endpoint))]
-    (reset! jwk-cache (zipmap (map :kid jwk-doc) jwk-doc))))
+    (swap! jwk-cache (fn [cache] (assoc cache
+                                   well-known-endpoint
+                                   {:last-refresh-ms (System/currentTimeMillis)
+                                    :keys            (zipmap (map :kid jwk-doc) jwk-doc)})))))
+
+(defn- last-cache-refresh-more-than-10-secs-ago
+  [well-known-endpoint]
+  (> (- (System/currentTimeMillis)
+        (get-in @jwk-cache [well-known-endpoint :last-refresh-ms] 0))
+     10000))
 
 (defn- fetch-jwk
   [well-known-endpoint kid]
-  (if-let [jwk (get @jwk-cache kid)]
+  (if-let [jwk (get-in @jwk-cache [well-known-endpoint :keys kid])]
     jwk
-    (do
+    (when (last-cache-refresh-more-than-10-secs-ago well-known-endpoint)
       (refresh-jwk-cache well-known-endpoint)
-      (get @jwk-cache kid))))
+      (get-in @jwk-cache [well-known-endpoint :keys kid]))))
 
 (defn get-public-key
   "Obtain the JWK public key from the well-known endpoint that matches the kid"

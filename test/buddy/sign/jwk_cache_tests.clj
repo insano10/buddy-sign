@@ -1,7 +1,8 @@
 (ns buddy.sign.jwk-cache-tests
   (:require [clojure.test :refer :all]
             [buddy.core.keys :as keys]
-            [buddy.sign.jwk-cache :as jwk]))
+            [buddy.sign.jwk-cache :as jwk])
+  (:import (java.util UUID)))
 
 (def public-keys {:LYyP2g "-----BEGIN PUBLIC KEY-----\n
                            MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAESlXFFkJ3JxMsXyXNrqzE3ozl/091 3PmNbccLLWfeQFUYtJqGtl8ESuYxRwc/QwZp5Wcl0HCq6GuFDx4/Tk18Ig==\n
@@ -38,25 +39,57 @@
                           mpf0DA-key,
                           b9vTLA-key]})
 
+(defn- wke-url [] (str "http://wke-" (UUID/randomUUID)))
+
 (deftest fetch-known-key-from-jwk-cache
-  (with-redefs [jwk/fetch (fn [_] full-jwk-doc)]
-    (is (= (jwk/get-public-key "http://well-known-endpoint" "LYyP2g")
+  (with-redefs [jwk/last-cache-refresh-more-than-10-secs-ago (fn [_] true)
+                jwk/fetch (fn [_] full-jwk-doc)]
+    (is (= (jwk/get-public-key (wke-url) "LYyP2g")
            (keys/str->public-key (:LYyP2g public-keys))))))
 
 (deftest fetch-unknown-key-from-jwk-cache
-  (with-redefs [jwk/fetch (fn [_] full-jwk-doc)]
-    (is (nil? (jwk/get-public-key "http://well-known-endpoint" "unknown")))))
+  (with-redefs [jwk/last-cache-refresh-more-than-10-secs-ago (fn [_] true)
+                jwk/fetch (fn [_] full-jwk-doc)]
+    (is (nil? (jwk/get-public-key (wke-url) "unknown")))))
 
 (deftest fetch-newly-rotated-known-key-from-jwk-cache
-  (testing "cache starts empty and keys are retrieved"
-    (with-redefs [jwk/fetch (fn [_] {:keys [LYyP2g-key,
-                                            mpf0DA-key]})]
-      (is (= (jwk/get-public-key "http://well-known-endpoint" "LYyP2g")
+  (let [wke (wke-url)]
+    (testing "cache starts empty and keys are retrieved"
+      (with-redefs [jwk/last-cache-refresh-more-than-10-secs-ago (fn [_] true)
+                    jwk/fetch (fn [_] {:keys [LYyP2g-key,
+                                              mpf0DA-key]})]
+        (is (= (jwk/get-public-key wke "LYyP2g")
+               (keys/str->public-key (:LYyP2g public-keys))))))
+
+    (testing "request for key not in cache causes it to be refreshed from the wke"
+      (with-redefs [jwk/last-cache-refresh-more-than-10-secs-ago (fn [_] true)
+                    jwk/fetch (fn [_] {:keys [mpf0DA-key,
+                                              b9vTLA-key]})]
+        (is (= (jwk/get-public-key wke "b9vTLA")
+               (keys/str->public-key (:b9vTLA public-keys))))))))
+
+(deftest cache-is-not-refreshed-if-it-was-already-refreshed-in-the-last-10-secs
+  (let [wke (wke-url)]
+    (testing "cache starts empty and keys are retrieved"
+      (with-redefs [jwk/last-cache-refresh-more-than-10-secs-ago (fn [_] true)
+                    jwk/fetch (fn [_] {:keys [LYyP2g-key]})]
+        (is (= (jwk/get-public-key wke "LYyP2g")
+               (keys/str->public-key (:LYyP2g public-keys))))))
+
+    (testing "immediate cache miss again does not trigger refresh"
+      (with-redefs [jwk/last-cache-refresh-more-than-10-secs-ago (fn [_] false)
+                    jwk/fetch (fn [_] {:keys [b9vTLA-key]})]
+        (is (nil? (jwk/get-public-key wke "b9vTLA")))))))
+
+(deftest different-wkes-are-cached-separately
+  (testing "key is retrieved for wke"
+    (with-redefs [jwk/last-cache-refresh-more-than-10-secs-ago (fn [_] true)
+                  jwk/fetch (fn [_] {:keys [LYyP2g-key]})]
+      (is (= (jwk/get-public-key (wke-url) "LYyP2g")
              (keys/str->public-key (:LYyP2g public-keys))))))
 
-  (testing "request for key not in cache causes it to be refreshed from the wke"
-    (with-redefs [jwk/fetch (fn [_] {:keys [mpf0DA-key,
-                                            b9vTLA-key]})]
-      (is (= (jwk/get-public-key "http://well-known-endpoint" "b9vTLA")
-             (keys/str->public-key (:b9vTLA public-keys)))))))
+  (testing "key is not present for different wke"
+    (with-redefs [jwk/last-cache-refresh-more-than-10-secs-ago (fn [_] true)
+                  jwk/fetch (fn [_] nil)]
+      (is (nil? (jwk/get-public-key (wke-url) "LYyP2g"))))))
 
