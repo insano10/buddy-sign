@@ -5,9 +5,9 @@
             [buddy.core.keys :as keys]))
 
 (def ^:private jwk-cache (atom {}))
+(def ^:private refresh-delay-ms 10000)
 
 (defn- fetch
-  "Obtain HTTP resource and parse it into a Clojure map"
   [endpoint]
   (-> @(http/get endpoint)
       :body
@@ -22,22 +22,21 @@
                                    {:last-refresh-ms (System/currentTimeMillis)
                                     :keys            (zipmap (map :kid jwk-doc) jwk-doc)})))))
 
-(defn- last-cache-refresh-more-than-10-secs-ago
+(defn- allow-cache-refresh?
   [well-known-endpoint]
   (> (- (System/currentTimeMillis)
-        (get-in @jwk-cache [well-known-endpoint :last-refresh-ms] 0))
-     10000))
+        (get-in @jwk-cache [well-known-endpoint :last-refresh-ms] -1))
+     refresh-delay-ms))
 
 (defn- fetch-jwk
   [well-known-endpoint kid]
   (if-let [jwk (get-in @jwk-cache [well-known-endpoint :keys kid])]
     jwk
-    (when (last-cache-refresh-more-than-10-secs-ago well-known-endpoint)
+    (when (allow-cache-refresh? well-known-endpoint)
       (refresh-jwk-cache well-known-endpoint)
       (get-in @jwk-cache [well-known-endpoint :keys kid]))))
 
 (defn get-public-key
-  "Obtain the JWK public key from the well-known endpoint that matches the kid"
   [well-known-endpoint kid]
   (when-let [jwk (fetch-jwk well-known-endpoint kid)]
     (keys/jwk->public-key jwk)))

@@ -41,29 +41,27 @@
 
 (defn- wke-url [] (str "http://wke-" (UUID/randomUUID)))
 
+(use-fixtures :once (fn [f] (with-redefs [jwk/refresh-delay-ms 0] f)))
+
 (deftest fetch-known-key-from-jwk-cache
-  (with-redefs [jwk/last-cache-refresh-more-than-10-secs-ago (fn [_] true)
-                jwk/fetch (fn [_] full-jwk-doc)]
+  (with-redefs [jwk/fetch (fn [_] full-jwk-doc)]
     (is (= (jwk/get-public-key (wke-url) "LYyP2g")
            (keys/str->public-key (:LYyP2g public-keys))))))
 
 (deftest fetch-unknown-key-from-jwk-cache
-  (with-redefs [jwk/last-cache-refresh-more-than-10-secs-ago (fn [_] true)
-                jwk/fetch (fn [_] full-jwk-doc)]
+  (with-redefs [jwk/fetch (fn [_] full-jwk-doc)]
     (is (nil? (jwk/get-public-key (wke-url) "unknown")))))
 
 (deftest fetch-newly-rotated-known-key-from-jwk-cache
   (let [wke (wke-url)]
     (testing "cache starts empty and keys are retrieved"
-      (with-redefs [jwk/last-cache-refresh-more-than-10-secs-ago (fn [_] true)
-                    jwk/fetch (fn [_] {:keys [LYyP2g-key,
+      (with-redefs [jwk/fetch (fn [_] {:keys [LYyP2g-key,
                                               mpf0DA-key]})]
         (is (= (jwk/get-public-key wke "LYyP2g")
                (keys/str->public-key (:LYyP2g public-keys))))))
 
     (testing "request for key not in cache causes it to be refreshed from the wke"
-      (with-redefs [jwk/last-cache-refresh-more-than-10-secs-ago (fn [_] true)
-                    jwk/fetch (fn [_] {:keys [mpf0DA-key,
+      (with-redefs [jwk/fetch (fn [_] {:keys [mpf0DA-key,
                                               b9vTLA-key]})]
         (is (= (jwk/get-public-key wke "b9vTLA")
                (keys/str->public-key (:b9vTLA public-keys))))))))
@@ -71,25 +69,22 @@
 (deftest cache-is-not-refreshed-if-it-was-already-refreshed-in-the-last-10-secs
   (let [wke (wke-url)]
     (testing "cache starts empty and keys are retrieved"
-      (with-redefs [jwk/last-cache-refresh-more-than-10-secs-ago (fn [_] true)
-                    jwk/fetch (fn [_] {:keys [LYyP2g-key]})]
+      (with-redefs [jwk/fetch (fn [_] {:keys [LYyP2g-key]})]
         (is (= (jwk/get-public-key wke "LYyP2g")
                (keys/str->public-key (:LYyP2g public-keys))))))
 
     (testing "immediate cache miss again does not trigger refresh"
-      (with-redefs [jwk/last-cache-refresh-more-than-10-secs-ago (fn [_] false)
+      (with-redefs [jwk/refresh-delay-ms 10000
                     jwk/fetch (fn [_] {:keys [b9vTLA-key]})]
         (is (nil? (jwk/get-public-key wke "b9vTLA")))))))
 
 (deftest different-wkes-are-cached-separately
   (testing "key is retrieved for wke"
-    (with-redefs [jwk/last-cache-refresh-more-than-10-secs-ago (fn [_] true)
-                  jwk/fetch (fn [_] {:keys [LYyP2g-key]})]
+    (with-redefs [jwk/fetch (fn [_] {:keys [LYyP2g-key]})]
       (is (= (jwk/get-public-key (wke-url) "LYyP2g")
              (keys/str->public-key (:LYyP2g public-keys))))))
 
   (testing "key is not present for different wke"
-    (with-redefs [jwk/last-cache-refresh-more-than-10-secs-ago (fn [_] true)
-                  jwk/fetch (fn [_] nil)]
+    (with-redefs [jwk/fetch (fn [_] nil)]
       (is (nil? (jwk/get-public-key (wke-url) "LYyP2g"))))))
 
